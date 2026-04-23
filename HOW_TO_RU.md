@@ -52,6 +52,8 @@ curl --socks5-hostname 127.0.0.1:1080 https://ifconfig.me/ip
 
 Клиентские настройки хранятся в `~/.config/spectra/client.env` с правами `600`. Управление:
 
+Чтобы не сохранять PSK в истории shell, можно передать его через переменную `SPECTRA_PSK` вместо аргумента `--psk`.
+
 ```bash
 ./scripts/client-service.sh status
 ./scripts/client-service.sh logs

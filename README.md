@@ -67,6 +67,8 @@ curl --socks5-hostname 127.0.0.1:1080 https://ifconfig.me/ip
 
 The client service stores its settings in `~/.config/spectra/client.env` with mode `600` and runs as the current desktop user via `systemctl --user`.
 
+To avoid putting the PSK into shell history, you can pass it through `SPECTRA_PSK` instead of `--psk`.
+
 Useful client commands:
 
 ```bash

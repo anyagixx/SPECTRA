@@ -176,8 +176,14 @@ parse_install_args() {
     esac
   done
 
-  [[ -n "$SERVER" ]] || fatal "--server HOST:PORT is required"
-  [[ -n "$PSK" ]] || fatal "--psk HEX is required"
+  [[ -n "$SERVER" ]] || SERVER="${SPECTRA_SERVER:-}"
+  [[ -n "$PSK" ]] || PSK="${SPECTRA_PSK:-}"
+  [[ -n "$SNI" ]] || SNI="${SPECTRA_SNI:-}"
+  [[ "$SOCKS" == "127.0.0.1:1080" && -n "${SPECTRA_SOCKS_LISTEN:-}" ]] && SOCKS="$SPECTRA_SOCKS_LISTEN"
+  [[ "$PROFILE" == "${PROJECT_DIR}/configs/profiles/geforcenow.json" && -n "${SPECTRA_PROFILE:-}" ]] && PROFILE="$SPECTRA_PROFILE"
+
+  [[ -n "$SERVER" ]] || fatal "--server HOST:PORT or SPECTRA_SERVER is required"
+  [[ -n "$PSK" ]] || fatal "--psk HEX or SPECTRA_PSK is required"
   [[ ${#PSK} -eq 64 ]] || fatal "PSK must be exactly 64 hex characters. Got ${#PSK}."
   [[ -n "$SNI" ]] || SNI="$(derive_sni)"
   [[ -f "$PROFILE" ]] || fatal "Profile file not found: $PROFILE"
