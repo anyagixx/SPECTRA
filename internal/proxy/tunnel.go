@@ -73,9 +73,17 @@ func (a *connIDAllocator) Release(id uint16) {
 	a.mu.Unlock()
 }
 
+const (
+	keepaliveInterval = 20 * time.Second
+	keepaliveTimeout  = 60 * time.Second
+)
+
+const rekeyInterval = 30 * time.Minute
+
 // ClientTunnel manages the QUIC connection from client to server and implements TunnelDialer.
 type ClientTunnel struct {
 	conn       quic.Connection
+	psk        []byte
 	keys       *scrypto.SessionKeys
 	shaper     *camouflage.Shaper
 	mux        *protocol.Muxer
@@ -84,6 +92,7 @@ type ClientTunnel struct {
 	sendMu     sync.Mutex
 	sendStream quic.SendStream
 	lastDataAt atomic.Int64
+	lastRecvAt atomic.Int64
 
 	// Active virtual connections indexed by ConnID
 	virtConns sync.Map // map[uint16]*VirtualConn
@@ -93,13 +102,14 @@ type ClientTunnel struct {
 }
 
 // NewClientTunnel wraps a QUIC connection into a SPECTRA client tunnel.
-func NewClientTunnel(conn quic.Connection, keys *scrypto.SessionKeys, shaper *camouflage.Shaper) *ClientTunnel {
+func NewClientTunnel(conn quic.Connection, psk []byte, keys *scrypto.SessionKeys, shaper *camouflage.Shaper) *ClientTunnel {
 	enc := scrypto.NewEncryptor(keys)
 	dec := scrypto.NewDecryptor(keys)
 	ctx, cancel := context.WithCancel(context.Background())
 
 	t := &ClientTunnel{
 		conn:    conn,
+		psk:     psk,
 		keys:    keys,
 		shaper:  shaper,
 		mux:     protocol.NewMuxer(enc),
@@ -108,7 +118,9 @@ func NewClientTunnel(conn quic.Connection, keys *scrypto.SessionKeys, shaper *ca
 		ctx:     ctx,
 		cancel:  cancel,
 	}
-	t.lastDataAt.Store(time.Now().UnixNano())
+	now := time.Now().UnixNano()
+	t.lastDataAt.Store(now)
+	t.lastRecvAt.Store(now)
 
 	return t
 }
@@ -317,6 +329,8 @@ func (ct *ClientTunnel) handleIncomingStream(stream quic.ReceiveStream) {
 			return
 		}
 
+		ct.lastRecvAt.Store(time.Now().UnixNano())
+
 		if frame.Type == protocol.FramePadding || inner == nil {
 			continue
 		}
@@ -331,6 +345,21 @@ func (ct *ClientTunnel) handleIncomingStream(stream quic.ReceiveStream) {
 				v.(*VirtualConn).closed.Store(true)
 				v.(*VirtualConn).readCond.Broadcast()
 				ct.connIDs.Release(inner.ConnID)
+			}
+		case protocol.CmdKeepalive:
+			// Server echoed our keepalive — lastRecvAt already updated.
+		case protocol.CmdRekey:
+			// Server acknowledged rekey — apply new keys derived from the salt.
+			if len(inner.Data) == scrypto.SaltSize {
+				newKeys, err := scrypto.DeriveSessionKeysDirect(ct.psk, inner.Data)
+				if err != nil {
+					log.Printf("[tunnel] rekey derivation failed: %v", err)
+				} else {
+					ct.mux.Rekey(newKeys)
+					ct.demux.Rekey(newKeys)
+					ct.keys = newKeys
+					log.Println("[tunnel] session keys rotated successfully")
+				}
 			}
 		case protocol.CmdPadding:
 			// Encrypted padding — discard silently.
@@ -351,9 +380,9 @@ func (ct *ClientTunnel) Close() error {
 			ct.sendClose(connID)
 			return true
 		})
-		time.Sleep(100 * time.Millisecond)
 	}
 	ct.cancel()
+	// Close the send stream (FIN) to flush buffered CLOSE frames.
 	ct.sendMu.Lock()
 	if ct.sendStream != nil {
 		_ = ct.sendStream.Close()
@@ -420,6 +449,72 @@ func (ct *ClientTunnel) StartPaddingGenerator() {
 	}()
 }
 
+// StartKeepalive runs a background goroutine that sends CmdKeepalive frames
+// and closes the tunnel if no frames are received within keepaliveTimeout.
+func (ct *ClientTunnel) StartKeepalive() {
+	go func() {
+		keepaliveTicker := time.NewTicker(keepaliveInterval)
+		rekeyTicker := time.NewTicker(rekeyInterval)
+		defer keepaliveTicker.Stop()
+		defer rekeyTicker.Stop()
+
+		for {
+			select {
+			case <-ct.ctx.Done():
+				return
+			case <-rekeyTicker.C:
+				ct.initiateRekey()
+			case <-keepaliveTicker.C:
+				// Check for dead tunnel.
+				lastRecv := time.Unix(0, ct.lastRecvAt.Load())
+				if time.Since(lastRecv) > keepaliveTimeout {
+					log.Printf("[tunnel] keepalive timeout — no data received for %v, closing", keepaliveTimeout)
+					ct.cancel()
+					return
+				}
+
+				// Send keepalive frame.
+				inner := &protocol.InnerPayload{
+					Cmd:    protocol.CmdKeepalive,
+					ConnID: 0,
+				}
+				frame, err := ct.mux.EncryptAndFrame(protocol.FrameControl, inner)
+				if err != nil {
+					continue
+				}
+				if err := ct.writeFrameCore(frame, false); err != nil {
+					log.Printf("[tunnel] keepalive send failed: %v", err)
+					return
+				}
+			}
+		}
+	}()
+}
+
+// initiateRekey generates a fresh salt, sends CmdRekey to the server, and waits
+// for the server to echo it back (handled in handleIncomingStream).
+func (ct *ClientTunnel) initiateRekey() {
+	salt, err := scrypto.GenerateSalt()
+	if err != nil {
+		log.Printf("[tunnel] rekey salt generation failed: %v", err)
+		return
+	}
+
+	inner := &protocol.InnerPayload{
+		Cmd:    protocol.CmdRekey,
+		ConnID: 0,
+		Data:   salt,
+	}
+	frame, err := ct.mux.EncryptAndFrame(protocol.FrameControl, inner)
+	if err != nil {
+		log.Printf("[tunnel] rekey encrypt failed: %v", err)
+		return
+	}
+	if err := ct.writeFrameCore(frame, false); err != nil {
+		log.Printf("[tunnel] rekey send failed: %v", err)
+	}
+}
+
 // writeFrameCore is the low-level frame writer. When updateLastData is true it
 // records the current time so the padding generator knows real traffic is active.
 func (ct *ClientTunnel) writeFrameCore(frame *protocol.Frame, updateLastData bool) error {
@@ -456,6 +551,7 @@ func (ct *ClientTunnel) writeFrame(frame *protocol.Frame) error {
 // ServerTunnel manages the server side of a SPECTRA connection.
 type ServerTunnel struct {
 	conn       quic.Connection
+	psk        []byte
 	keys       *scrypto.SessionKeys
 	shaper     *camouflage.Shaper
 	mux        *protocol.Muxer
@@ -475,13 +571,14 @@ type serverVirtConn struct {
 }
 
 // NewServerTunnel wraps a QUIC connection into a SPECTRA server tunnel.
-func NewServerTunnel(conn quic.Connection, keys *scrypto.SessionKeys, shaper *camouflage.Shaper) *ServerTunnel {
+func NewServerTunnel(conn quic.Connection, psk []byte, keys *scrypto.SessionKeys, shaper *camouflage.Shaper) *ServerTunnel {
 	enc := scrypto.NewEncryptor(keys)
 	dec := scrypto.NewDecryptor(keys)
 	ctx, cancel := context.WithCancel(context.Background())
 
 	return &ServerTunnel{
 		conn:   conn,
+		psk:    psk,
 		keys:   keys,
 		shaper: shaper,
 		mux:    protocol.NewMuxer(enc),
@@ -531,10 +628,62 @@ func (st *ServerTunnel) handleStream(stream quic.ReceiveStream) {
 			st.handleData(inner)
 		case protocol.CmdClose:
 			st.handleClose(inner)
+		case protocol.CmdRekey:
+			st.handleRekey(inner)
+		case protocol.CmdKeepalive:
+			st.handleKeepalive()
 		case protocol.CmdPadding:
 			// Encrypted padding — discard silently.
 		}
 	}
+}
+
+func (st *ServerTunnel) handleKeepalive() {
+	inner := &protocol.InnerPayload{
+		Cmd:    protocol.CmdKeepalive,
+		ConnID: 0,
+	}
+	frame, err := st.mux.EncryptAndFrame(protocol.FrameControl, inner)
+	if err != nil {
+		return
+	}
+	_ = st.writeFrame(frame)
+}
+
+func (st *ServerTunnel) handleRekey(inner *protocol.InnerPayload) {
+	if len(inner.Data) != scrypto.SaltSize {
+		log.Printf("[server-tunnel] invalid rekey salt size: %d", len(inner.Data))
+		return
+	}
+
+	newKeys, err := scrypto.DeriveSessionKeysDirect(st.psk, inner.Data)
+	if err != nil {
+		log.Printf("[server-tunnel] rekey derivation failed: %v", err)
+		return
+	}
+
+	// Echo the rekey acknowledgment BEFORE switching keys,
+	// so the client knows when to switch.
+	ack := &protocol.InnerPayload{
+		Cmd:    protocol.CmdRekey,
+		ConnID: 0,
+		Data:   inner.Data,
+	}
+	frame, err := st.mux.EncryptAndFrame(protocol.FrameControl, ack)
+	if err != nil {
+		log.Printf("[server-tunnel] rekey ack encrypt failed: %v", err)
+		return
+	}
+	if err := st.writeFrame(frame); err != nil {
+		log.Printf("[server-tunnel] rekey ack write failed: %v", err)
+		return
+	}
+
+	// Now apply the new keys.
+	st.mux.Rekey(newKeys)
+	st.demux.Rekey(newKeys)
+	st.keys = newKeys
+	log.Println("[server-tunnel] session keys rotated successfully")
 }
 
 func (st *ServerTunnel) handleConnect(inner *protocol.InnerPayload) {
@@ -666,9 +815,9 @@ func (st *ServerTunnel) Close() error {
 			st.sendClose(key.(uint16))
 			return true
 		})
-		time.Sleep(100 * time.Millisecond)
 	}
 	st.cancel()
+	// Close the send stream (FIN) to flush buffered CLOSE frames.
 	st.sendMu.Lock()
 	if st.sendStream != nil {
 		_ = st.sendStream.Close()

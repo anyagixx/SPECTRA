@@ -1,6 +1,7 @@
 package camouflage
 
 import (
+	crand "crypto/rand"
 	"math/rand"
 	"sync"
 	"time"
@@ -73,10 +74,8 @@ func (s *Shaper) PadToTarget(data []byte, frameType protocol.FrameType) ([]byte,
 	}
 
 	padding := make([]byte, targetSize-len(data))
-	// Fill padding with random bytes to avoid zero-pattern detection
-	s.mu.Lock()
-	s.rng.Read(padding)
-	s.mu.Unlock()
+	// Fill padding with cryptographically random bytes to avoid PRNG prediction
+	crand.Read(padding)
 
 	return data, padding
 }

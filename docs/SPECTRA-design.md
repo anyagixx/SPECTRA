@@ -491,37 +491,41 @@ docker compose -f deployments/docker-compose.client.yml up -d
 ## 12. MVP Roadmap
 
 ### Phase 1: Core Protocol (Weeks 1-2)
-- [ ] Crypto module (HKDF, XChaCha20-Poly1305)
-- [ ] Frame serialization/deserialization
-- [ ] QUIC connection setup with quic-go
-- [ ] Basic handshake (PSK auth, no traffic shaping)
-- [ ] End-to-end data tunnel (no SOCKS5 yet, raw TCP forwarding)
+- [x] Crypto module (HKDF, XChaCha20-Poly1305)
+- [x] Frame serialization/deserialization
+- [x] QUIC connection setup with quic-go
+- [x] Basic handshake (PSK auth, no traffic shaping)
+- [x] End-to-end data tunnel (no SOCKS5 yet, raw TCP forwarding)
 
 ### Phase 2: Proxy Layer (Week 3)
-- [ ] SOCKS5 server on client side
-- [ ] TCP dialer on server side
-- [ ] Connection multiplexing (multiple SOCKS5 connections over one QUIC session)
+- [x] SOCKS5 server on client side
+- [x] TCP dialer on server side
+- [x] Connection multiplexing (multiple SOCKS5 connections over one QUIC session)
 
 ### Phase 3: Camouflage (Weeks 4-5)
-- [ ] GeForce NOW traffic profile (captured/synthesized JSON)
-- [ ] Packet length padding engine
-- [ ] IAT Markov chain shaper
-- [ ] Padding frame generator for idle periods
+- [x] GeForce NOW traffic profile (captured/synthesized JSON)
+- [x] Packet length padding engine (crypto/rand)
+- [x] IAT Markov chain shaper
+- [x] Padding frame generator for idle periods
 
 ### Phase 4: Hardening (Week 6)
-- [ ] Anti-replay Bloom filter
-- [ ] Decoy web server
-- [ ] Constant-time auth comparison
+- [x] Anti-replay Bloom filter (time-rotating dual-bucket)
+- [x] Decoy web server (HTTP/3 binary framing)
+- [x] Constant-time auth comparison
+- [x] Connection rate limiter (256 concurrent connections)
+- [x] Session key rotation (CmdRekey every 30 min)
+- [x] Application-level keepalive with dead-tunnel detection
+- [x] Graceful close (stream FIN flush)
 - [ ] Connection migration support
 
 ### Phase 5: DevOps (Week 7)
-- [ ] Multi-stage Dockerfile
-- [ ] Docker Compose for client & server
+- [x] Multi-stage Dockerfile
+- [x] Docker Compose for client & server
 - [ ] Auto-TLS with ACME
-- [ ] Configuration management (env vars, config file)
+- [x] Configuration management (env vars, config file)
 
 ### Phase 6: Validation (Week 8)
-- [ ] Unit tests for all modules
-- [ ] Integration test (client → server → httpbin)
+- [x] Unit tests for all modules
+- [x] Integration test (client → server → upstream HTTP)
 - [ ] KS-test validation against traffic profiles
 - [ ] Active probe testing

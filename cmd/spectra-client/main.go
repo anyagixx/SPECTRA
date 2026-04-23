@@ -123,6 +123,7 @@ func main() {
 		log.Printf("[client] Tunnel established to %s", *serverAddr)
 		socks.SwapDialer(tunnel)
 		tunnel.StartPaddingGenerator()
+		tunnel.StartKeepalive()
 		go tunnel.RunReceiver()
 
 		// Wait for tunnel death or app shutdown
@@ -258,7 +259,7 @@ func connectToServer(ctx context.Context, addr, sni string, psk []byte, profile 
 
 	// Create tunnel
 	shaper := camouflage.NewShaper(profile)
-	tunnel := proxy.NewClientTunnel(conn, keys, shaper)
+	tunnel := proxy.NewClientTunnel(conn, psk, keys, shaper)
 
 	return tunnel, nil
 }

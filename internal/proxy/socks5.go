@@ -51,8 +51,14 @@ func NewSocks5Server(listenAddr string, dialer TunnelDialer) (*Socks5Server, err
 	return s, nil
 }
 
-// dialViaSpectrum is the custom dialer that routes SOCKS5 connections through the SPECTRA tunnel.
-func (s *Socks5Server) dialViaSpectrum(ctx context.Context, network, addr string) (net.Conn, error) {
+// dialViaSpectrumWithRequest routes SOCKS5 connections through the SPECTRA tunnel,
+// preserving the original FQDN to avoid local DNS leakage on the client.
+func (s *Socks5Server) dialViaSpectrumWithRequest(ctx context.Context, network, addr string, req *socks5.Request) (net.Conn, error) {
+	destAddr := addr
+	if req != nil && req.RawDestAddr != nil && req.RawDestAddr.FQDN != "" {
+		destAddr = net.JoinHostPort(req.RawDestAddr.FQDN, strconv.Itoa(req.RawDestAddr.Port))
+	}
+
 	s.mu.Lock()
 	dialer := s.dialer
 	s.mu.Unlock()
@@ -61,9 +67,9 @@ func (s *Socks5Server) dialViaSpectrum(ctx context.Context, network, addr string
 		return nil, fmt.Errorf("proxy: tunnel not connected")
 	}
 
-	rwc, err := dialer.DialTunnel(ctx, addr)
+	rwc, err := dialer.DialTunnel(ctx, destAddr)
 	if err != nil {
-		return nil, fmt.Errorf("proxy: tunnel dial failed for %s: %w", addr, err)
+		return nil, fmt.Errorf("proxy: tunnel dial failed for %s: %w", destAddr, err)
 	}
 
 	// Wrap ReadWriteCloser as net.Conn if needed
@@ -71,17 +77,7 @@ func (s *Socks5Server) dialViaSpectrum(ctx context.Context, network, addr string
 		return conn, nil
 	}
 
-	return &rwcConn{rwc: rwc, addr: addr}, nil
-}
-
-// dialViaSpectrumWithRequest preserves the original FQDN when the SOCKS5 client
-// asked for remote hostname resolution, avoiding local DNS leakage on the client.
-func (s *Socks5Server) dialViaSpectrumWithRequest(ctx context.Context, network, addr string, req *socks5.Request) (net.Conn, error) {
-	destAddr := addr
-	if req != nil && req.RawDestAddr != nil && req.RawDestAddr.FQDN != "" {
-		destAddr = net.JoinHostPort(req.RawDestAddr.FQDN, strconv.Itoa(req.RawDestAddr.Port))
-	}
-	return s.dialViaSpectrum(ctx, network, destAddr)
+	return &rwcConn{rwc: rwc, addr: destAddr}, nil
 }
 
 // ListenAndServe starts the SOCKS5 server.

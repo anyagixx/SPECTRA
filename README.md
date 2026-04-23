@@ -4,7 +4,7 @@
 
 SPECTRA is a QUIC/TLS 1.3 SOCKS5 proxy that tunnels client TCP traffic through a VPS while shaping packet sizes and timing toward a cloud-gaming traffic profile.
 
-Current release baseline: `0.1.5`
+Current release baseline: `0.2.0`
 
 ## Features
 
@@ -118,9 +118,9 @@ ls -lh dist/
 
 The script builds Linux `amd64` and `arm64` binary archives plus a source archive:
 
-- `dist/spectra-v0.1.5-linux-amd64.tar.gz`
-- `dist/spectra-v0.1.5-linux-arm64.tar.gz`
-- `dist/spectra-v0.1.5-source.tar.gz`
+- `dist/spectra-v0.2.0-linux-amd64.tar.gz`
+- `dist/spectra-v0.2.0-linux-arm64.tar.gz`
+- `dist/spectra-v0.2.0-source.tar.gz`
 
 `dist/` is intentionally ignored by git; GitHub should receive source, scripts, docs, and tags, not locally built artifacts unless you attach them to a GitHub Release manually.
 

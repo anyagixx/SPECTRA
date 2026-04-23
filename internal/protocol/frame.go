@@ -151,6 +151,7 @@ const (
 	CmdClose     Command = 0x03
 	CmdPadding   Command = 0x04
 	CmdKeepalive Command = 0x05
+	CmdRekey     Command = 0x06
 )
 
 // String returns the human-readable name of a Command.
@@ -166,6 +167,8 @@ func (c Command) String() string {
 		return "PADDING"
 	case CmdKeepalive:
 		return "KEEPALIVE"
+	case CmdRekey:
+		return "REKEY"
 	default:
 		return fmt.Sprintf("UNKNOWN(0x%02X)", uint8(c))
 	}
@@ -173,9 +176,9 @@ func (c Command) String() string {
 
 // InnerPayload represents the decrypted inner payload structure.
 type InnerPayload struct {
-	Cmd      Command
-	ConnID   uint16 // Connection multiplexing ID
-	Data     []byte
+	Cmd    Command
+	ConnID uint16 // Connection multiplexing ID
+	Data   []byte
 }
 
 // InnerPayload header: Cmd(1) + ConnID(2) + DataLength(2) = 5 bytes
@@ -242,7 +245,7 @@ func NewPaddingFrame(seq uint32, size int) *Frame {
 }
 
 var (
-	ErrFrameTooLarge    = errors.New("protocol: frame exceeds maximum size")
-	ErrInvalidFrame     = errors.New("protocol: invalid frame")
-	ErrPayloadTooShort  = errors.New("protocol: payload too short")
+	ErrFrameTooLarge   = errors.New("protocol: frame exceeds maximum size")
+	ErrInvalidFrame    = errors.New("protocol: invalid frame")
+	ErrPayloadTooShort = errors.New("protocol: payload too short")
 )

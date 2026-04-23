@@ -4,7 +4,6 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
-	"sync"
 	"time"
 
 	scrypto "github.com/anyagixx/SPECTRA/internal/crypto"
@@ -116,7 +115,6 @@ func BuildAuthInit(psk []byte) (*AuthInit, error) {
 type ServerVerifier struct {
 	psk   []byte
 	bloom *BloomFilter
-	mu    sync.Mutex
 }
 
 // NewServerVerifier creates a new server-side auth verifier.
@@ -132,7 +130,7 @@ func NewServerVerifier(psk []byte) *ServerVerifier {
 func (sv *ServerVerifier) VerifyAuthInit(init *AuthInit) error {
 	// Check version
 	if init.Version != ProtocolVersion {
-		return fmt.Errorf("handshake: unsupported version: 0x%02X", init.Version)
+		return fmt.Errorf("%w: 0x%02X", ErrVersionMismatch, init.Version)
 	}
 
 	// Check timestamp within drift window
@@ -151,16 +149,13 @@ func (sv *ServerVerifier) VerifyAuthInit(init *AuthInit) error {
 	binary.BigEndian.PutUint64(hmacData[scrypto.SaltSize:], uint64(init.Timestamp))
 
 	if !scrypto.VerifyHMAC(sv.psk, hmacData, init.HMAC) {
-		return errors.New("handshake: HMAC verification failed")
+		return ErrAuthFailed
 	}
 
 	// Anti-replay: check bloom filter
-	sv.mu.Lock()
-	defer sv.mu.Unlock()
-
 	replayKey := append(init.Salt, hmacData[scrypto.SaltSize:]...)
 	if sv.bloom.Test(replayKey) {
-		return errors.New("handshake: replay detected")
+		return ErrReplay
 	}
 	sv.bloom.Add(replayKey)
 
@@ -194,7 +189,7 @@ func VerifyAuthOK(psk, clientSalt []byte, ok *AuthOK) error {
 	copy(hmacData[scrypto.SaltSize:], ok.ServerRandom)
 
 	if !scrypto.VerifyHMAC(psk, hmacData, ok.HMAC) {
-		return errors.New("handshake: server HMAC verification failed")
+		return ErrAuthFailed
 	}
 	return nil
 }

@@ -21,7 +21,7 @@ func TestGeneratePSK(t *testing.T) {
 	}
 }
 
-func TestDeriveSessionKeys(t *testing.T) {
+func TestDeriveSessionKeysDirect(t *testing.T) {
 	psk, _ := GeneratePSK()
 	salt, _ := GenerateSalt()
 

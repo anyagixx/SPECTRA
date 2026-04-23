@@ -92,6 +92,14 @@ func (m *Muxer) EncryptAndFrame(frameType FrameType, inner *InnerPayload) (*Fram
 	}, nil
 }
 
+// Rekey atomically replaces the encryption keys and resets sequence numbers.
+func (m *Muxer) Rekey(keys *scrypto.SessionKeys) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.seqNums = make(map[FrameType]uint32)
+	return m.enc.Rekey(keys)
+}
+
 // WriteFrame serializes and writes a frame to the given writer.
 // Uses a pooled buffer to avoid per-frame allocation.
 func WriteFrame(w io.Writer, f *Frame) error {
@@ -148,6 +156,11 @@ func (d *Demuxer) DecryptFrame(f *Frame) (*InnerPayload, error) {
 	}
 
 	return inner, nil
+}
+
+// Rekey atomically replaces the decryption keys.
+func (d *Demuxer) Rekey(keys *scrypto.SessionKeys) error {
+	return d.dec.Rekey(keys)
 }
 
 // ReadAndDecrypt reads a frame from the reader and decrypts it.

@@ -154,16 +154,28 @@ func TestBloomFilter(t *testing.T) {
 	}
 }
 
-func TestBloomAutoReset(t *testing.T) {
-	bf := NewBloomFilter(64, 2) // small filter, maxLoad = 32
+func TestBloomTimeRotation(t *testing.T) {
+	// Use a very short rotation interval for testing.
+	bf := NewBloomFilterWithRotation(1024, 4, 50*time.Millisecond)
 
-	for i := 0; i < 100; i++ {
-		bf.Add([]byte{byte(i)})
+	data := []byte("replay-entry")
+	bf.Add(data)
+
+	// Entry should be found immediately.
+	if !bf.Test(data) {
+		t.Fatal("Entry should be found right after Add")
 	}
 
-	// After auto-reset, count should be much less than 100
-	if bf.Count() > 50 {
-		t.Fatalf("Bloom should have auto-reset, count = %d", bf.Count())
+	// Wait for one rotation — entry moves to previous bucket but is still found.
+	time.Sleep(60 * time.Millisecond)
+	if !bf.Test(data) {
+		t.Fatal("Entry should still be found after one rotation (in previous bucket)")
+	}
+
+	// Wait for another rotation — entry should be gone.
+	time.Sleep(60 * time.Millisecond)
+	if bf.Test(data) {
+		t.Fatal("Entry should be gone after two rotations")
 	}
 }
 

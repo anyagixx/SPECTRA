@@ -1,5 +1,37 @@
 # Changelog
 
+## 0.2.0 - 2026-04-23
+
+### Cryptographic Hardening
+- Replaced `math/rand` with `crypto/rand` for padding byte generation in `Shaper.PadToTarget()` to prevent PRNG prediction attacks.
+- Replaced simple auto-reset Bloom filter with a time-rotating dual-bucket Bloom filter aligned to `MaxTimestampDrift` (30s) for correct anti-replay semantics.
+- Removed redundant `sync.Mutex` from `ServerVerifier` — the Bloom filter now manages its own internal synchronization.
+- Added in-session key rotation (`CmdRekey`): client generates a fresh salt every 30 minutes, server derives new keys and echoes acknowledgment; both sides atomically switch `Encryptor`/`Decryptor`.
+
+### Protocol Improvements
+- Added application-level keepalive (`CmdKeepalive`): client sends keepalive every 20s, server echoes; dead tunnel detected and torn down after 60s of silence.
+- Replaced `time.Sleep(100ms)` graceful close with proper QUIC stream FIN flush in both `ClientTunnel.Close()` and `ServerTunnel.Close()`.
+- Added `CmdRekey` (0x06) command to the protocol framing layer.
+
+### Active Probe Resistance
+- Replaced HTTP/1.1 plaintext decoy with proper HTTP/3 binary framing (HEADERS + DATA frames with QPACK-encoded headers), making the decoy indistinguishable from a real H3 web server.
+
+### Server Hardening
+- Added connection concurrency semaphore (256 max) to the server accept loop to prevent DoS resource exhaustion.
+
+### Code Quality
+- Removed `DeriveSessionKeys` alias — only `DeriveSessionKeysDirect` remains.
+- Inlined `dialViaSpectrum` into `dialViaSpectrumWithRequest`, eliminating an unnecessary indirection.
+- Switched all error return paths in `crypto` and `handshake` packages to use sentinel errors (`ErrInvalidPSK`, `ErrInvalidSalt`, `ErrDecryption`, `ErrAuthFailed`, `ErrReplay`, `ErrVersionMismatch`) with `%w` wrapping for `errors.Is()` support.
+- Documented `FlowFeatures` as reserved for future flow-level analysis evasion.
+
+### Testing
+- Added `TestBloomTimeRotation` verifying entries survive one rotation and expire after two.
+- Added full E2E integration test (`TestIntegrationE2E`): QUIC server + handshake + client tunnel + upstream HTTP through the tunnel.
+
+### Documentation
+- Updated MVP roadmap in `SPECTRA-design.md` to reflect all completed phases and newly implemented features.
+
 ## 0.1.5 - 2026-04-23
 
 - Hardened client reconnect handling: when the QUIC tunnel is lost, the SOCKS5 server now rejects new CONNECT requests until a fresh tunnel is established instead of sending them into a dead tunnel.

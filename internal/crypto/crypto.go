@@ -17,12 +17,12 @@ import (
 )
 
 const (
-	PSKSize        = 32 // 256-bit pre-shared key
-	SaltSize       = 32 // 256-bit connection salt
-	SessionKeySize = 32 // 256-bit session key for XChaCha20
-	BaseIVSize     = 24 // 192-bit base IV for XChaCha20
+	PSKSize        = 32                          // 256-bit pre-shared key
+	SaltSize       = 32                          // 256-bit connection salt
+	SessionKeySize = 32                          // 256-bit session key for XChaCha20
+	BaseIVSize     = 24                          // 192-bit base IV for XChaCha20
 	NonceSize      = chacha20poly1305.NonceSizeX // 24 bytes
-	TagSize        = chacha20poly1305.Overhead    // 16 bytes
+	TagSize        = chacha20poly1305.Overhead   // 16 bytes
 )
 
 // StreamID identifies which QUIC stream a nonce belongs to, ensuring domain separation.
@@ -59,19 +59,13 @@ func GenerateSalt() ([]byte, error) {
 	return salt, nil
 }
 
-// DeriveSessionKeys derives a SessionKey and BaseIV from a PSK and connection salt using HKDF-SHA256.
-// This is an alias for DeriveSessionKeysDirect.
-func DeriveSessionKeys(psk, connectionSalt []byte) (*SessionKeys, error) {
-	return DeriveSessionKeysDirect(psk, connectionSalt)
-}
-
-// DeriveSessionKeysDirect derives session keys using a simpler HKDF flow (extract then expand).
+// DeriveSessionKeysDirect derives session keys using HKDF-SHA256 (extract then expand).
 func DeriveSessionKeysDirect(psk, connectionSalt []byte) (*SessionKeys, error) {
 	if len(psk) != PSKSize {
-		return nil, fmt.Errorf("crypto: invalid PSK length: got %d, want %d", len(psk), PSKSize)
+		return nil, fmt.Errorf("%w: got %d, want %d", ErrInvalidPSK, len(psk), PSKSize)
 	}
 	if len(connectionSalt) != SaltSize {
-		return nil, fmt.Errorf("crypto: invalid salt length: got %d, want %d", len(connectionSalt), SaltSize)
+		return nil, fmt.Errorf("%w: got %d, want %d", ErrInvalidSalt, len(connectionSalt), SaltSize)
 	}
 
 	// Extract PRK
@@ -140,7 +134,7 @@ func Decrypt(sessionKey, nonce, ciphertext, additionalData []byte) ([]byte, erro
 
 	plaintext, err := aead.Open(nil, nonce, ciphertext, additionalData)
 	if err != nil {
-		return nil, fmt.Errorf("crypto: decryption failed (authentication error): %w", err)
+		return nil, fmt.Errorf("%w: %v", ErrDecryption, err)
 	}
 	return plaintext, nil
 }
@@ -162,10 +156,10 @@ func VerifyHMAC(key, data, expectedMAC []byte) bool {
 func PSKFromHex(hexPSK string) ([]byte, error) {
 	psk, err := hex.DecodeString(hexPSK)
 	if err != nil {
-		return nil, fmt.Errorf("crypto: invalid hex PSK: %w", err)
+		return nil, fmt.Errorf("%w: invalid hex: %v", ErrInvalidPSK, err)
 	}
 	if len(psk) != PSKSize {
-		return nil, fmt.Errorf("crypto: invalid PSK length: got %d, want %d", len(psk), PSKSize)
+		return nil, fmt.Errorf("%w: got %d, want %d", ErrInvalidPSK, len(psk), PSKSize)
 	}
 	return psk, nil
 }
@@ -206,6 +200,21 @@ func (e *Encryptor) Seal(stream StreamID, plaintext, ad []byte) ([]byte, uint64,
 	return ciphertext, counter, nil
 }
 
+// Rekey atomically replaces the session keys and AEAD cipher, resetting all
+// nonce counters. This is used for in-session key rotation.
+func (e *Encryptor) Rekey(keys *SessionKeys) error {
+	aead, err := chacha20poly1305.NewX(keys.SessionKey)
+	if err != nil {
+		return fmt.Errorf("crypto: rekey failed: %w", err)
+	}
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.keys = keys
+	e.aead = aead
+	e.counters = make(map[StreamID]uint64)
+	return nil
+}
+
 // Decryptor manages per-stream nonce counters and provides stateful decryption.
 // It is safe for concurrent use. The AEAD cipher is created once and reused.
 type Decryptor struct {
@@ -239,7 +248,7 @@ func (d *Decryptor) Open(stream StreamID, ciphertext, ad []byte) ([]byte, error)
 	BuildNonceInto(d.nonceBuf[:], d.keys.BaseIV, stream, counter)
 	plaintext, err := d.aead.Open(nil, d.nonceBuf[:], ciphertext, ad)
 	if err != nil {
-		return nil, fmt.Errorf("crypto: decryption failed (authentication error): %w", err)
+		return nil, fmt.Errorf("%w: %v", ErrDecryption, err)
 	}
 	d.counters[stream] = counter + 1
 	return plaintext, nil
@@ -253,12 +262,27 @@ func (d *Decryptor) OpenWithCounter(stream StreamID, counter uint64, ciphertext,
 	BuildNonceInto(d.nonceBuf[:], d.keys.BaseIV, stream, counter)
 	plaintext, err := d.aead.Open(nil, d.nonceBuf[:], ciphertext, ad)
 	if err != nil {
-		return nil, fmt.Errorf("crypto: decryption failed (authentication error): %w", err)
+		return nil, fmt.Errorf("%w: %v", ErrDecryption, err)
 	}
 	if counter >= d.counters[stream] {
 		d.counters[stream] = counter + 1
 	}
 	return plaintext, nil
+}
+
+// Rekey atomically replaces the session keys and AEAD cipher, resetting all
+// nonce counters. This is used for in-session key rotation.
+func (d *Decryptor) Rekey(keys *SessionKeys) error {
+	aead, err := chacha20poly1305.NewX(keys.SessionKey)
+	if err != nil {
+		return fmt.Errorf("crypto: rekey failed: %w", err)
+	}
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.keys = keys
+	d.aead = aead
+	d.counters = make(map[StreamID]uint64)
+	return nil
 }
 
 var (

@@ -92,7 +92,7 @@ func TestClientTunnelDialTunnelRejectsClosedTunnel(t *testing.T) {
 		SessionKey: make([]byte, scrypto.SessionKeySize),
 		BaseIV:     make([]byte, scrypto.BaseIVSize),
 	}
-	tunnel := NewClientTunnel(nil, keys, nil)
+	tunnel := NewClientTunnel(nil, nil, keys, nil)
 	tunnel.cancel()
 
 	conn, err := tunnel.DialTunnel(context.Background(), "example.com:443")
