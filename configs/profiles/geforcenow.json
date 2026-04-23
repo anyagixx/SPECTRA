@@ -1,0 +1,87 @@
+{
+  "name": "GeForce NOW",
+  "version": "1.0",
+  "description": "Traffic profile mimicking NVIDIA GeForce NOW cloud gaming sessions at 1080p/60fps",
+
+  "packet_sizes": {
+    "video": {
+      "p_frame": {
+        "min": 900,
+        "max": 1400,
+        "mean": 1200,
+        "stddev": 120,
+        "distribution": "normal"
+      },
+      "i_frame": {
+        "min": 3000,
+        "max": 8000,
+        "mean": 5500,
+        "stddev": 1200,
+        "distribution": "normal"
+      },
+      "i_frame_ratio": 0.033
+    },
+    "audio": {
+      "min": 40,
+      "max": 160,
+      "mean": 80,
+      "stddev": 25,
+      "distribution": "normal"
+    },
+    "input": {
+      "min": 20,
+      "max": 120,
+      "mean": 52,
+      "stddev": 18,
+      "distribution": "normal"
+    }
+  },
+
+  "timing": {
+    "video_interval_ms": {
+      "min": 10,
+      "max": 25,
+      "mean": 16.67,
+      "stddev": 2.0,
+      "distribution": "normal"
+    },
+    "audio_interval_ms": {
+      "min": 15,
+      "max": 30,
+      "mean": 20.0,
+      "stddev": 1.0,
+      "distribution": "normal"
+    },
+    "input_interval_ms": {
+      "min": 2,
+      "max": 20,
+      "mean": 8.0,
+      "stddev": 3.0,
+      "distribution": "exponential"
+    }
+  },
+
+  "markov_chain": {
+    "states": ["idle", "video", "audio", "input", "iframe"],
+    "transition_matrix": [
+      [0.05, 0.50, 0.20, 0.20, 0.05],
+      [0.03, 0.55, 0.22, 0.15, 0.05],
+      [0.03, 0.52, 0.20, 0.20, 0.05],
+      [0.05, 0.50, 0.20, 0.20, 0.05],
+      [0.03, 0.60, 0.20, 0.12, 0.05]
+    ]
+  },
+
+  "flow_features": {
+    "upstream_downstream_byte_ratio": {
+      "min": 0.02,
+      "max": 0.08,
+      "mean": 0.04
+    },
+    "session_duration_seconds": {
+      "min": 300,
+      "max": 14400,
+      "mean": 3600
+    }
+  }
+}

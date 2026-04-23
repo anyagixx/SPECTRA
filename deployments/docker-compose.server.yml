@@ -1,0 +1,24 @@
+version: "3.8"
+
+services:
+  spectra-server:
+    build:
+      context: ..
+      dockerfile: deployments/Dockerfile
+      target: server
+    ports:
+      - "443:443/udp"
+    environment:
+      - SPECTRA_PSK=${SPECTRA_PSK}
+      - SPECTRA_LISTEN=:443
+      - SPECTRA_CERT=/certs/cert.pem
+      - SPECTRA_KEY=/certs/key.pem
+      - SPECTRA_PROFILE=/etc/spectra/configs/profiles/geforcenow.json
+    volumes:
+      - ./certs:/certs:ro
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"

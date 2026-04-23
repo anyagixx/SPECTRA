@@ -1,0 +1,34 @@
+# Binaries
+/spectra-server
+/spectra-client
+/spectra-server.exe
+/spectra-client.exe
+*.exe
+*.out
+
+# Certificates (never commit secrets)
+certs/
+*.pem
+
+# IDE / editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Go
+vendor/
+
+# Project
+.genkit/
+.env
+dist/
+release/
+.spectra-release/
+*.tar.gz
+*.zip

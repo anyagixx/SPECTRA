@@ -1,0 +1,22 @@
+version: "3.8"
+
+services:
+  spectra-client:
+    build:
+      context: ..
+      dockerfile: deployments/Dockerfile
+      target: client
+    ports:
+      - "1080:1080/tcp"
+    environment:
+      - SPECTRA_PSK=${SPECTRA_PSK}
+      - SPECTRA_SERVER=${SPECTRA_SERVER}
+      - SPECTRA_SNI=${SPECTRA_SNI}
+      - SPECTRA_SOCKS_LISTEN=:1080
+      - SPECTRA_PROFILE=/etc/spectra/configs/profiles/geforcenow.json
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
