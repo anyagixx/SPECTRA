@@ -131,6 +131,7 @@ func main() {
 		case <-ctx.Done():
 		}
 
+		socks.SwapDialer(nil)
 		tunnel.Close()
 
 		if ctx.Err() != nil {

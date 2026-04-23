@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.5 - 2026-04-23
+
+- Hardened client reconnect handling: when the QUIC tunnel is lost, the SOCKS5 server now rejects new CONNECT requests until a fresh tunnel is established instead of sending them into a dead tunnel.
+- Added a fast closed-tunnel guard in `DialTunnel` to prevent stale connection buildup during VPS redeploys or application connection storms.
+
 ## 0.1.4 - 2026-04-23
 
 - Added `scripts/client-service.sh` for persistent Ubuntu Desktop installation as a `systemctl --user` service.

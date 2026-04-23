@@ -189,6 +189,10 @@ func (vc *VirtualConn) deliverData(data []byte) {
 
 // DialTunnel implements TunnelDialer — opens a new virtual connection through the tunnel.
 func (ct *ClientTunnel) DialTunnel(ctx context.Context, destAddr string) (io.ReadWriteCloser, error) {
+	if err := ct.ctx.Err(); err != nil {
+		return nil, fmt.Errorf("proxy: tunnel closed: %w", err)
+	}
+
 	connID, err := ct.connIDs.Allocate()
 	if err != nil {
 		return nil, err

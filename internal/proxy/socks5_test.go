@@ -4,8 +4,10 @@ import (
 	"context"
 	"io"
 	"net"
+	"strings"
 	"testing"
 
+	scrypto "github.com/anyagixx/SPECTRA/internal/crypto"
 	"github.com/things-go/go-socks5"
 	"github.com/things-go/go-socks5/statute"
 )
@@ -82,5 +84,25 @@ func TestDialViaSpectrumWithRequestPreservesFQDN(t *testing.T) {
 
 	if dialer.lastDest != "example.com:443" {
 		t.Fatalf("DialTunnel called with %q, want %q", dialer.lastDest, "example.com:443")
+	}
+}
+
+func TestClientTunnelDialTunnelRejectsClosedTunnel(t *testing.T) {
+	keys := &scrypto.SessionKeys{
+		SessionKey: make([]byte, scrypto.SessionKeySize),
+		BaseIV:     make([]byte, scrypto.BaseIVSize),
+	}
+	tunnel := NewClientTunnel(nil, keys, nil)
+	tunnel.cancel()
+
+	conn, err := tunnel.DialTunnel(context.Background(), "example.com:443")
+	if err == nil {
+		if conn != nil {
+			conn.Close()
+		}
+		t.Fatal("DialTunnel should fail on a closed tunnel")
+	}
+	if !strings.Contains(err.Error(), "tunnel closed") {
+		t.Fatalf("DialTunnel error = %q, want tunnel closed", err)
 	}
 }
